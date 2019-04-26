@@ -1,0 +1,7 @@
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\bin\Release\Multithreading.exe.config
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\bin\Release\Multithreading.exe
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\bin\Release\Multithreading.pdb
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Release\Multithreading.csprojAssemblyReference.cache
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Release\Multithreading.csproj.CoreCompileInputs.cache
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Release\Multithreading.exe
+C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Release\Multithreading.pdb
