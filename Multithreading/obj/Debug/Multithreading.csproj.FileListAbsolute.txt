@@ -5,3 +5,10 @@ C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Debug\Multithreadi
 C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Debug\Multithreading.csproj.CoreCompileInputs.cache
 C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Debug\Multithreading.exe
 C:\Users\A7tti\source\repos\Multithreading\Multithreading\obj\Debug\Multithreading.pdb
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\obj\Debug\Multithreading.csprojAssemblyReference.cache
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\obj\Debug\Multithreading.csproj.CoreCompileInputs.cache
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\obj\Debug\Multithreading.exe
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\obj\Debug\Multithreading.pdb
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\bin\Debug\Multithreading.exe.config
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\bin\Debug\Multithreading.exe
+C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\bin\Debug\Multithreading.pdb

@@ -14,23 +14,22 @@ using System.IO.Compression;
 using System.Threading;
 using System.Collections;
 using System.Linq;
-using System.Diagnostics;
 
 namespace Multithreading
 {
     /// <summary>
     /// Класс распаковки
     /// </summary>
-    public class Unzipper : IArchiverMode
+    public class Unzipper
     {
         private ArchiverTaskPool _readTaskPool;
         private ArchiverTaskPool _compressTaskPool;
         // TODO: обернуть Hashtable в ArchiverTaskPool
         private Hashtable _writeTaskPool;
-        private Int64 _readBlockSize;
+        private Int64 _fileLength;
         private Int64 _lastBlock = 0;
+        private Int64 _batchCount = 1;
         private bool _await = false;
-        private Int64 _batchCount;
 
         private IUnzipperTaskFactory _taskFactory;
         private int _cores;
@@ -42,19 +41,15 @@ namespace Multithreading
         /// <param name="factory">
         /// Фабрика для создания задач
         /// </param>
-        /// <param name="readBlockSize">
-        /// Размер блока для чтения и сжатия
-        /// </param>
         /// <param name="cores">
         /// Количество доступных потоков для распаковки
         /// </param>
         /// <param name="maxTasks">
         /// Ограничение по количеству задач, чтобы избежать переполнения памяти
         /// </param>
-        public Unzipper(IUnzipperTaskFactory factory, Int64 readBlockSize = 4096, int cores = 2, int maxTasks = 1000)
+        public Unzipper(IUnzipperTaskFactory factory, int cores = 2, int maxTasks = 1000)
         {
             _taskFactory = factory;
-            _readBlockSize = readBlockSize;
             _cores = cores;
             _maxTasks = maxTasks;
         }
@@ -74,7 +69,8 @@ namespace Multithreading
             _compressTaskPool = new ArchiverTaskPool();
             _writeTaskPool = new Hashtable();
 
-            // Флаг для потока записи, сигнализирующий, что процесс генерации задач не окончен
+            _fileLength = readFile.GetDescription.Length;
+            // Флаг для окончания потоков, сигнализирующий, что процесс генерации задач ещё не окончен
             _await = true;
 
             try
@@ -103,7 +99,6 @@ namespace Multithreading
             }
             catch (Exception exc)
             {
-                Console.WriteLine("Can't process threads");
                 return false;
             }
 
@@ -116,7 +111,7 @@ namespace Multithreading
                 Thread.Sleep(100);
             } while (_lastBlock < _batchCount);
 
-                _await = false;
+            _await = false;
             return true;
         }
 
@@ -133,9 +128,9 @@ namespace Multithreading
                 FileDescriptor read_file = ((FileDescriptor)obj);
                 using (FileStream _fileToBeDecompressed = read_file.GetDescription.OpenRead())
                 {
-                    Int64 _batchCount = 0;
+                    _batchCount = 0;
                     // Читать блоки архива, пока не закончится файл
-                    while (_fileToBeDecompressed.Position < _fileToBeDecompressed.Length)
+                    while (_fileToBeDecompressed.Position < _fileLength)
                     {
                         // Чтение размеров блоков и самих блоков
                         byte[] lengthBuffer = new byte[8];
@@ -147,6 +142,7 @@ namespace Multithreading
                         _fileToBeDecompressed.Read(compressedData, 8, blockLength - 8);
 
                         _compressTaskPool.AddTask(_taskFactory.CreateDecompressionTask(_batchCount++, compressedData));
+
                         // Защита от переполнения памяти
                         if (_compressTaskPool.TaskCount() > _maxTasks)
                         {

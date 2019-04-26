@@ -19,10 +19,11 @@ namespace Multithreading
             _bytes = bytes;
         }
 
-        public void Execute(object obj)
+        public object Execute(object obj)
         {
             FileStream fileStream = obj as FileStream;
             fileStream.Write(_bytes, 0, _bytes.Length);
+            return null;
         }
 
         public object GetData()

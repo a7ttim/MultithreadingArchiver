@@ -42,6 +42,6 @@ namespace Multithreading
         /// <param name="obj">
         /// Обхект состояния для задачи
         /// </param>
-        void Execute(object obj);
+        object Execute(object obj);
     }
 }

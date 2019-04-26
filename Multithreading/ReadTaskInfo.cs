@@ -17,8 +17,9 @@ namespace Multithreading
             _length = (int)length;
         }
 
-        public void Execute(object obj)
+        public object Execute(object obj)
         {
+            return null;
         }
 
         public object GetData()

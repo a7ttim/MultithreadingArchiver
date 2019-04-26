@@ -29,12 +29,13 @@ namespace Multithreading
             _bytes = bytes;
 		}
 
-        public void Execute(object obj)
+        public object Execute(object obj)
         {
             using (GZipStream compressStream = new GZipStream((MemoryStream)obj, CompressionLevel.Optimal))
             {
                 compressStream.Write(_bytes, 0, _bytes.Length);
             }
+            return null;
         }
 
         public object GetData()

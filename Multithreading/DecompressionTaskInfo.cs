@@ -36,7 +36,7 @@ namespace Multithreading
         /// <param name="obj">
         /// Обхект состояния для задачи
         /// </param>
-        public void Execute(object obj)
+        public object Execute(object obj)
         {
             byte[] buffer = obj as byte[];
             using (MemoryStream memoryStream = new MemoryStream())
@@ -47,6 +47,7 @@ namespace Multithreading
                     buffer = _bytes.ToArray();
                 }
             }
+            return null;
         }
 
         public object GetData()

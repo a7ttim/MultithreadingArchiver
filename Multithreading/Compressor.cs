@@ -13,14 +13,13 @@ using System.IO;
 using System.IO.Compression;
 using System.Threading;
 using System.Collections;
-using System.Diagnostics;
 
 namespace Multithreading
 {
     /// <summary>
     /// Класс сжатия
     /// </summary>
-    public class Compressor : IArchiverMode
+    public class Compressor
     {
         private ArchiverTaskPool _readTaskPool;
         private ArchiverTaskPool _compressTaskPool;
@@ -108,7 +107,7 @@ namespace Multithreading
 
                 // Запуск потока генерации задач
                 {
-                    Thread thread = new Thread(GenerateReadTasks);
+                    Thread thread = new Thread(GeneratorThread);
                     thread.Start();
                 }
             }
@@ -119,14 +118,13 @@ namespace Multithreading
             }
 
             // Ждать, пока не завершится последний кусок и обновлять прогресс
-            while (_lastBatch < _batchCount)
+            while (_lastBlock < _batchCount)
             {
                 Console.Clear();
                 // Здесь должно высылаться оповещение контроллеру, чтобы тот обновил на GUI прогресс бар (W.I.P.) :)
                 Console.WriteLine("Progress: " + Math.Truncate(_lastBlock / (double)_batchCount * 100) + "%");
                 Thread.Sleep(100);
             }
-
             if (_lastBatch > 0)
             {
                 Thread.Sleep(100);
@@ -139,7 +137,7 @@ namespace Multithreading
         /// <summary>
         /// Метод для потока генерации задач для чтения. Необходим для более гибкого распределения нагрузки на поток чтения файла
         /// </summary>
-        private void GenerateReadTasks()
+        private void GeneratorThread()
         {
             int wait = Convert.ToInt32(Math.Pow(_cores, 1.5));
             for (int i = 0; i < _batchCount; i++)

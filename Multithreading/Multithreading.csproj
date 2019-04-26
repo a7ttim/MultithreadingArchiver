@@ -51,7 +51,6 @@
     <Compile Include="FileDescriptor.cs" />
     <Compile Include="ICompressorTaskFactory.cs" />
     <Compile Include="IUnzipperTaskFactory.cs" />
-    <Compile Include="IArchiverMode.cs" />
     <Compile Include="ITaskFactory.cs" />
     <Compile Include="ITaskInfo.cs" />
     <Compile Include="Program.cs" />

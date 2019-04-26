@@ -19,12 +19,13 @@ namespace Multithreading
             _bytes = bytes;
         }
 
-        public void Execute(object obj)
+        public object Execute(object obj)
         {
             FileStream fileStream = obj as FileStream;
             // В первых 4х байтах длина куска данных
             BitConverter.GetBytes(_bytes.Length).CopyTo(_bytes, 4);
             fileStream.Write(_bytes, 0, _bytes.Length);
+            return null;
         }
 
         public object GetData()
