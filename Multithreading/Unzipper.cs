@@ -7,13 +7,8 @@
 ///////////////////////////////////////////////////////////
 
 using System;
-using System.Collections.Generic;
-using System.Text;
 using System.IO;
-using System.IO.Compression;
 using System.Threading;
-using System.Collections;
-using System.Linq;
 
 namespace Multithreading
 {
@@ -22,16 +17,22 @@ namespace Multithreading
     /// </summary>
     public class Unzipper
     {
-        private ArchiverTaskPool _readTaskPool;
-        private ArchiverTaskPool _compressTaskPool;
-        // TODO: обернуть Hashtable в ArchiverTaskPool
-        private Hashtable _writeTaskPool;
+        private QueueTaskPool _readTaskPool;
+        private QueueTaskPool _compressTaskPool;
+        private HashtableTaskPool _writeTaskPool;
         private Int64 _fileLength;
+        /// <summary> 
+        /// Счётчик блоков для наблюдателя
+        /// </summary>
         private Int64 _lastBlock = 0;
+        /// <summary> 
+        /// Счётчик считанных блоков, выставлена единица, 
+        /// чтобы наблюдатель не прерывал процесс сразу
+        /// </summary>
         private Int64 _batchCount = 1;
         private bool _await = false;
 
-        private IUnzipperTaskFactory _taskFactory;
+        private ITaskFactory _taskFactory;
         private int _cores;
         private int _maxTasks;
 
@@ -47,7 +48,7 @@ namespace Multithreading
         /// <param name="maxTasks">
         /// Ограничение по количеству задач, чтобы избежать переполнения памяти
         /// </param>
-        public Unzipper(IUnzipperTaskFactory factory, int cores = 2, int maxTasks = 1000)
+        public Unzipper(ITaskFactory factory, int cores = 2, int maxTasks = 100)
         {
             _taskFactory = factory;
             _cores = cores;
@@ -65,50 +66,42 @@ namespace Multithreading
         /// </param>
         public bool ProcessFile(FileDescriptor readFile, FileDescriptor writeFile)
         {
-            _readTaskPool = new ArchiverTaskPool();
-            _compressTaskPool = new ArchiverTaskPool();
-            _writeTaskPool = new Hashtable();
+            _readTaskPool = new QueueTaskPool();
+            _compressTaskPool = new QueueTaskPool();
+            _writeTaskPool = new HashtableTaskPool();
 
             _fileLength = readFile.GetDescription.Length;
-            // Флаг для окончания потоков, сигнализирующий, что процесс генерации задач ещё не окончен
-            _await = true;
 
             try
             {
+                _await = true;
                 // Запуск потока чтения
                 {
-                    Thread thread = new Thread(ReadingThread);
-                    thread.Start(readFile);
+                    new Thread(ReadingThread).Start(readFile);
                 }
-
                 // Запустить потоки распаковки
                 for (int i = 0; i < _cores; i++)
                 {
-                    if (i < _cores)
-                    {
-                        Thread thread = new Thread(DecompressingThread);
-                        thread.Start();
-                    }
+                    new Thread(DecompressingThread).Start();
                 }
-
                 // Запустить поток записи
                 {
-                    Thread thread = new Thread(WritingThread);
-                    thread.Start(writeFile);
+                    new Thread(WritingThread).Start(writeFile);
                 }
             }
             catch (Exception exc)
             {
+                Console.WriteLine("Can't process threads");
+#if DEBUG
+                Console.WriteLine(exc);
+#endif
                 return false;
             }
 
             // Ждать, пока не завершится последний кусок и обновлять прогресс
-
             do
             {
-                //Console.Clear();
-                // Здесь должно высылаться оповещение контроллеру, чтобы тот обновил на GUI прогресс бар (W.I.P.) :)
-                Thread.Sleep(100);
+                Thread.Sleep(500);
             } while (_lastBlock < _batchCount);
 
             _await = false;
@@ -123,37 +116,28 @@ namespace Multithreading
         /// </param>
         private void ReadingThread(object obj)
         {
+            FileDescriptor read_file = obj as FileDescriptor;
             try
             {
-                FileDescriptor read_file = ((FileDescriptor)obj);
                 using (FileStream _fileToBeDecompressed = read_file.GetDescription.OpenRead())
                 {
                     _batchCount = 0;
                     // Читать блоки архива, пока не закончится файл
                     while (_fileToBeDecompressed.Position < _fileLength)
-                    {
-                        // Чтение размеров блоков и самих блоков
-                        byte[] lengthBuffer = new byte[8];
-                        _fileToBeDecompressed.Read(lengthBuffer, 0, lengthBuffer.Length);
-                        int blockLength = BitConverter.ToInt32(lengthBuffer, 4);
-                        byte[] compressedData = new byte[blockLength];
-                        lengthBuffer.CopyTo(compressedData, 0);
-
-                        _fileToBeDecompressed.Read(compressedData, 8, blockLength - 8);
-
-                        _compressTaskPool.AddTask(_taskFactory.CreateDecompressionTask(_batchCount++, compressedData));
-
+                    {                        
                         // Защита от переполнения памяти
-                        if (_compressTaskPool.TaskCount() > _maxTasks)
+                        if (_compressTaskPool.TaskCount() > _maxTasks * _cores)
                         {
-                            Thread.Sleep(100);
+                            continue;
                         }
+                        ITaskInfo task = _taskFactory.CreateReadTask(_batchCount, 0);
+                        _compressTaskPool.AddTask(_taskFactory.CreateProcessTask(_batchCount++, task.Execute(_fileToBeDecompressed) as byte[]));
                     }
                 }
             }
             catch (Exception exc)
             {
-                Console.WriteLine("Error on file read thread");
+                Console.WriteLine("Error on file reading");
                 _await = false;
             }
         }
@@ -164,42 +148,29 @@ namespace Multithreading
         /// </summary>
         private void DecompressingThread()
         {
-            while (_await)
+            try
             {
-                DecompressionTaskInfo taskInfo = _compressTaskPool.NextTask() as DecompressionTaskInfo;
-                if (taskInfo == null)
+                while (_await)
                 {
-                    continue;
-                }
-                try
-                {
-                    byte[] buffer = taskInfo.GetData() as byte[];
-                    using (MemoryStream memoryStream = new MemoryStream(buffer))
+                    // Защита от переполнения памяти
+                    if (_writeTaskPool.TaskCount() > _maxTasks)
                     {
-                        using (GZipStream compressStream = new GZipStream(memoryStream, CompressionMode.Decompress))
-                        {
-                            int size = BitConverter.ToInt32(buffer, buffer.Length - 4);
-                            byte[] bytes = new byte[size];
-                            compressStream.Read(bytes, 0, bytes.Length);
-                            byte[] array = bytes.ToArray();
-                            Hashtable.Synchronized(_writeTaskPool).Add(taskInfo.GetId(), _taskFactory.CreateDecompressionWriteTask(taskInfo.GetId(), array));
-                        }
+                        continue;
                     }
-                    
-                }
-                catch (Exception exc)
-                {
-                    Console.WriteLine("Error on decompression thread:" + exc);
-                    _await = false;
-                }
-                // Защита от переполнения памяти
-                if (_writeTaskPool.Count > _maxTasks)
-                {
-                    Thread.Sleep(100);
+                    ITaskInfo taskInfo = _compressTaskPool.NextTask() as ITaskInfo;
+                    if (taskInfo == null)
+                    {
+                        continue;
+                    }
+                    _writeTaskPool.AddTask(_taskFactory.CreateWriteTask(taskInfo.GetId(), taskInfo.Execute(null) as byte[]));
                 }
             }
+            catch (Exception exc)
+            {
+                Console.WriteLine("Error on file unpacking");
+                _await = false;
+            }
         }
-
 
         /// <summary>
         /// Метод для потока записи. Запись происходит в один поток, так как требуется упорядочить сжатые блоки по Id
@@ -209,32 +180,27 @@ namespace Multithreading
         /// </param>
         private void WritingThread(object obj)
         {
-            FileDescriptor writeFile = ((FileDescriptor)obj);
+            FileDescriptor writeFile = obj as FileDescriptor;
             try
             {
                 using (FileStream fileWrite = writeFile.GetDescription.OpenWrite())
                 {
                     _lastBlock = 0;
-                    Hashtable tasks = Hashtable.Synchronized(_writeTaskPool);
                     while (_await)
                     {
-                        if (tasks.ContainsKey(_lastBlock))
-                        {
-                            DecompressionWriteTaskInfo taskInfo = tasks[_lastBlock] as DecompressionWriteTaskInfo;
-                            taskInfo.Execute(fileWrite);
-                            tasks.Remove(_lastBlock);
-                            _lastBlock++;
-                        }
-                        else
+                        ITaskInfo taskInfo = _writeTaskPool.NextTask() as ITaskInfo;
+                        if (taskInfo == null)
                         {
                             continue;
                         }
+                        taskInfo.Execute(fileWrite);
+                        _lastBlock++;
                     }
                 }
             }
             catch (Exception exc)
             {
-                Console.WriteLine("Error on writing thread: " + exc);
+                Console.WriteLine("Error on file writing");
                 _await = false;
             }
         }

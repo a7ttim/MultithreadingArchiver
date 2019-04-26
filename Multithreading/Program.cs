@@ -16,25 +16,23 @@ namespace Multithreading
         /// Конструктор класса Распаковки
         /// </summary>
         /// <param name="args">
-        /// Первый параметр - режим работы архиватора
-        /// c или compress - сжатие
-        /// u или unpack - деархивация
-        /// Второй параметр - исходный файл
-        /// 
-        /// Третий параметр - исходный файл
+        /// Первый параметр - режим работы архиватора:
+        /// c или compress - сжатие /
+        /// u или unpack - деархивация;
+        /// Второй параметр - исходный файл;
+        /// Третий параметр - конечный файл
         /// </param>
         static void Main(string[] args)
         {
             /// TODO:
-            /// Для фабрик задач один интерфейс и 2 реализации
-            /// Все действия инкапсулировать в задачи
+            /// Генерацию исключений в Program переместить в отдельные методы
 
             // Проверка на то, что файлы уже не сжаты
             try
             {
 #if DEBUG
-                string mode = "unpack";
-                string open_path = @"ReShade_Setup_4.2.1.exe.gz";
+                string mode = "compress";
+                string open_path = @"ReShade_Setup_4.2.1.exe";
                 string save_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\bin\Debug\";
 #else
                 if (args.Length < 2)
@@ -50,7 +48,6 @@ namespace Multithreading
                 FileDescriptor open;
                 FileDescriptor save;
                 // Инициализация
-                ArchiverTaskFactory factory = new ArchiverTaskFactory();
                 if (mode == "c" || mode == "compress")
                 {
                     // Контейнеры для описаний файлов
@@ -71,13 +68,22 @@ namespace Multithreading
                         throw new Exception("Dir is not exist");
                     }
 
-                    Compressor progamMode = new Compressor(factory, 65536, Environment.ProcessorCount, 5000);
+                    CompressionTaskFactory factory = new CompressionTaskFactory();
+                    Compressor progamMode = new Compressor(factory, 65536, Environment.ProcessorCount, 100);
 
-                    // Запуск сжатия или распаковки
+                    var timer = new Stopwatch();
+                    timer.Start();
+
+                    // Запуск сжатия
                     if (!progamMode.ProcessFile(open, save))
                     {
                         throw new Exception("Unsuccesful compressing");
                     }
+
+                    timer.Stop();
+
+                    Console.WriteLine(timer.Elapsed.TotalSeconds);
+                    Console.ReadLine();
 
                     // Вывести уровень сжатия
                     Console.WriteLine("Compression level: " + Math.Truncate(save.GetDescription.Length / (double)open.GetDescription.Length * 100) + "%");
@@ -106,11 +112,22 @@ namespace Multithreading
                         throw new Exception("Source file extension is not GZip");
                     }
 
+                    UnzipperTaskFactory factory = new UnzipperTaskFactory();
                     Unzipper progamMode = new Unzipper(factory, Environment.ProcessorCount);
-                    if(!progamMode.ProcessFile(open, save))
+
+                    var timer = new Stopwatch();
+                    timer.Start();
+
+                    // Запуск распаковки
+                    if (!progamMode.ProcessFile(open, save))
                     {
                         throw new Exception("Unsuccesful unpacking");
                     }
+
+                    timer.Stop();
+
+                    Console.WriteLine(timer.Elapsed.TotalSeconds);
+                    Console.ReadLine();
                 }                
             }
             catch (Exception exc)

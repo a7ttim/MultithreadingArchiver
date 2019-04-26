@@ -1,17 +1,14 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.IO;
 
 namespace Multithreading
 {
-    class ReadTaskInfo : ITaskInfo
+    class CompressionReadTaskInfo : ITaskInfo
     {
         private Int64 _id;
         private int _length;
 
-        public ReadTaskInfo(Int64 id, Int64 length)
+        public CompressionReadTaskInfo(Int64 id, Int64 length)
         {
             _id = id;
             _length = (int)length;
@@ -19,7 +16,10 @@ namespace Multithreading
 
         public object Execute(object obj)
         {
-            return null;
+            FileStream file = obj as FileStream;
+            byte[] buffer = new byte[_length];
+            file.Read(buffer, 0, _length);
+            return buffer;
         }
 
         public object GetData()

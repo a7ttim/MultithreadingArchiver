@@ -7,12 +7,8 @@
 ///////////////////////////////////////////////////////////
 
 using System;
-using System.Collections.Generic;
-using System.Text;
 using System.IO;
-using System.IO.Compression;
 using System.Threading;
-using System.Collections;
 
 namespace Multithreading
 {
@@ -21,18 +17,48 @@ namespace Multithreading
     /// </summary>
     public class Compressor
     {
-        private ArchiverTaskPool _readTaskPool;
-        private ArchiverTaskPool _compressTaskPool;
-        private Hashtable _writeTaskPool;
-        private Int64 _readBlockSize;
-        private Int64 _lastBlock;
+        /// <summary> 
+        /// 
+        /// </summary>
+        private QueueTaskPool _readTaskPool;
+        private QueueTaskPool _compressTaskPool;
+        private HashtableTaskPool _writeTaskPool;
+        /// <summary> 
+        /// Флаг для потоков, сигнализирующий, что процесс генерации задач не окончен
+        /// </summary>
         private bool _await = false;
+        /// <summary> 
+        /// Счётчик блоков для наблюдателя
+        /// </summary>
+        private Int64 _lastBlock;
+        /// <summary> 
+        /// Длина исходного файла
+        /// </summary>
         private Int64 _fileLength;
+        /// <summary> 
+        /// Количество кусков
+        /// </summary>
         private Int64 _batchCount;
-        private Int64 _lastBatch;
+        /// <summary> 
+        /// Длина каждого куска
+        /// </summary>
+        private Int64 _readBlockSize;
+        /// <summary> 
+        /// Длина последнего куска
+        /// </summary>
+        private Int64 _lastPiece;
 
-        private ICompressorTaskFactory _taskFactory;
+        /// <summary> 
+        /// Фабрика для создания задач
+        /// </summary>
+        private ITaskFactory _taskFactory;
+        /// <summary> 
+        /// Количество доступных ядер
+        /// </summary>
         private int _cores;
+        /// <summary> 
+        /// Максимальное число задач
+        /// </summary>
         private int _maxTasks;
 
         /// <summary>
@@ -50,7 +76,7 @@ namespace Multithreading
         /// <param name="maxTasks">
         /// Ограничение по количеству задач, чтобы избежать переполнения памяти
         /// </param>
-        public Compressor(ICompressorTaskFactory factory, Int64 readBlockSize = 4096, int cores = 2, int maxTasks = 1000)
+        public Compressor(ITaskFactory factory, Int64 readBlockSize = 4096, int cores = 2, int maxTasks = 100)
         {
             _taskFactory = factory;
             _readBlockSize = readBlockSize;
@@ -69,63 +95,55 @@ namespace Multithreading
         /// </param>
         public bool ProcessFile(FileDescriptor readFile, FileDescriptor writeFile)
         {
-            _readTaskPool = new ArchiverTaskPool();
-            _compressTaskPool = new ArchiverTaskPool();
-            _writeTaskPool = new Hashtable();
+            _readTaskPool = new QueueTaskPool();
+            _compressTaskPool = new QueueTaskPool();
+            _writeTaskPool = new HashtableTaskPool();
 
             // Создание задач чтения файла
             _fileLength = readFile.GetDescription.Length;
             _batchCount = _fileLength / _readBlockSize;
-            _lastBatch = _fileLength % _readBlockSize;
-
-            // Флаг для потока записи, сигнализирующий, что процесс генерации задач не окончен
-            _await = true;
+            _lastPiece = _fileLength % _readBlockSize;
 
             try
             {
+                _await = true;
+
                 // Запуск потока чтения
                 {
-                    Thread thread = new Thread(ReadingThread);
-                    thread.Start(readFile);
+                    new Thread(ReadingThread).Start(readFile);
                 }
-
                 // Запустить потоки распаковки
                 for (int i = 0; i < _cores; i++)
                 {
-                    if (i < _cores)
-                    {
-                        Thread thread = new Thread(CompressingThread);
-                        thread.Start();
-                    }
+                    new Thread(CompressingThread).Start();
                 }
-
                 // Запустить поток записи
                 {
-                    Thread thread = new Thread(WritingThread);
-                    thread.Start(writeFile);
+                    new Thread(WritingThread).Start(writeFile);
                 }
-
                 // Запуск потока генерации задач
                 {
-                    Thread thread = new Thread(GeneratorThread);
-                    thread.Start();
+                    new Thread(GeneratorThread).Start();
                 }
             }
-            catch(Exception exc)
+            catch (Exception exc)
             {
                 Console.WriteLine("Can't process threads");
+#if DEBUG
+                Console.WriteLine(exc);
+#endif
                 return false;
             }
 
-            // Ждать, пока не завершится последний кусок и обновлять прогресс
+            // Наблюдатель - ждёт, пока не завершится последний кусок и обновляет прогресс
             while (_lastBlock < _batchCount)
             {
                 Console.Clear();
-                // Здесь должно высылаться оповещение контроллеру, чтобы тот обновил на GUI прогресс бар (W.I.P.) :)
-                Console.WriteLine("Progress: " + Math.Truncate(_lastBlock / (double)_batchCount * 100) + "%");
-                Thread.Sleep(100);
+                // Здесь должно высылаться оповещение контроллеру, чтобы тот обновил на GUI прогресс бар (W.I.P.) =]
+                Console.WriteLine("Progress: {0}%", Math.Truncate(_lastBlock / (double)_batchCount * 100));
+                Thread.Sleep(500);
             }
-            if (_lastBatch > 0)
+            if (_lastPiece > 0)
             {
                 Thread.Sleep(100);
             }
@@ -139,22 +157,34 @@ namespace Multithreading
         /// </summary>
         private void GeneratorThread()
         {
-            int wait = Convert.ToInt32(Math.Pow(_cores, 1.5));
-            for (int i = 0; i < _batchCount; i++)
+            try
             {
-                _readTaskPool.AddTask(_taskFactory.CreateReadTask(i, _readBlockSize));
-                // Защита от переполнения памяти
-                // Без этого произойдёт переполнение
-                // Нагенерируется больше задач, чем возможно обработать за промежуток времени, проверено на SSD
-                // TODO: Возможно подобрать более оптимальные значения за счёт градиентного спуска
-                if (_readTaskPool.TaskCount() > _maxTasks)
+                int wait = Convert.ToInt32(Math.Pow(_cores, 1.5));
+                for (int i = 0; i < _batchCount; i++)
                 {
-                    Thread.Sleep(100);
+                    // Защита от переполнения памяти
+                    // Без этого произойдёт переполнение
+                    // Нагенерируется больше задач, чем возможно обработать за промежуток времени, проверено на SSD
+                    // TODO: Возможно подобрать более оптимальные значения maxTasks за счёт градиентного спуска
+                    if (_readTaskPool.TaskCount() > _maxTasks)
+                    {
+                        --i;
+                        continue;
+                    }
+                    _readTaskPool.AddTask(_taskFactory.CreateReadTask(i, _readBlockSize));
+                }
+                // Обработка последнего куска
+                if (_lastPiece > 0)
+                {
+                    _readTaskPool.AddTask(_taskFactory.CreateReadTask(_batchCount, _lastPiece));
                 }
             }
-            if (_lastBatch > 0)
+            catch(Exception exc)
             {
-                _readTaskPool.AddTask(_taskFactory.CreateReadTask(_batchCount, _lastBatch));
+                Console.WriteLine("Error on generating reading tasks");
+#if DEBUG
+                Console.WriteLine(exc);
+#endif
             }
         }
 
@@ -166,99 +196,101 @@ namespace Multithreading
         /// </param>
         private void ReadingThread(object obj)
         {
+            FileDescriptor read_file = obj as FileDescriptor;
             try
             {
-                FileDescriptor read_file = ((FileDescriptor)obj);
                 using (FileStream _fileToBeCompressed = read_file.GetDescription.OpenRead())
                 {
                     Int64 lastBlock = 0;
                     while (_await)
                     {
-                        ITaskInfo taskInfo = _readTaskPool.NextTask();
+                        // Защита от переполнения памяти
+                        if (_compressTaskPool.TaskCount() > _maxTasks * _cores)
+                        {
+                            continue;
+                        }
+                        ITaskInfo taskInfo = null;
+                        taskInfo = _readTaskPool.NextTask();
                         if (taskInfo == null)
                         {
                             continue;
                         }
-                        int length = (int)taskInfo.GetData();
-                        byte[] buffer = new byte[length];
-                        _fileToBeCompressed.Read(buffer, 0, length);
-                        _compressTaskPool.AddTask(_taskFactory.CreateCompressionTask(lastBlock++, buffer));
-                        // Защита от переполнения памяти
-                        if (_compressTaskPool.TaskCount() > _maxTasks)
-                        {
-                            Thread.Sleep(100);
-                        }
+                        _compressTaskPool.AddTask(_taskFactory.CreateProcessTask(lastBlock++, (taskInfo.Execute(_fileToBeCompressed) as byte[])));
                     }
                 }
             }
             catch (Exception exc)
             {
-                Console.WriteLine("Error on file read thread");
+                Console.WriteLine("Error on file reading");
+#if DEBUG
+                Console.WriteLine(exc);
+#endif
                 _await = false;
             }
         }
 
-        // Сжатие и генерация задач записи работает в том количестве потоков, сколько процессоров доступно системе, 
-        // давая распределённую почти 100% нагрузку на все ядра процессора
+        /// <summary>
+        /// Сжатие и генерация задач записи работает в том количестве потоков, сколько процессоров доступно системе, 
+        /// давая распределённую и почти 100% нагрузку на все ядра процессора
+        /// </summary>
         private void CompressingThread()
         {
-            while (_await)
+            try
             {
-                CompressionTaskInfo taskInfo = _compressTaskPool.NextTask() as CompressionTaskInfo;
-                if (taskInfo == null)
+                while (_await)
                 {
-                    continue;
-                }
-                try
-                {
-                    using (MemoryStream memoryStream = new MemoryStream())
-                    {
-                        taskInfo.Execute(memoryStream);
-                        Hashtable.Synchronized(_writeTaskPool).Add(taskInfo.GetId(), _taskFactory.CreateCompressionWriteTask(taskInfo.GetId(), memoryStream.ToArray()));
+                    // Защита от переполнения памяти
+                    if (_writeTaskPool.TaskCount() > _maxTasks)
+                    {                        
+                        continue;
                     }
+                    ITaskInfo taskInfo = _compressTaskPool.NextTask();
+                    if (taskInfo == null)
+                    {
+                        continue;
+                    }
+                    _writeTaskPool.AddTask(_taskFactory.CreateWriteTask(taskInfo.GetId(), (taskInfo.Execute(null) as MemoryStream).ToArray()));
                 }
-                catch (Exception exc)
-                {
-                    Console.WriteLine("Error on compression thread");
-                    _await = false;
-                }
-                // Защита от переполнения памяти
-                if (_writeTaskPool.Count > _maxTasks)
-                {
-                    Thread.Sleep(100);
-                }
+            }
+            catch (Exception exc)
+            {
+                Console.WriteLine("Error on file compressing");
+#if DEBUG
+                Console.WriteLine(exc);
+#endif
+                _await = false;
             }
         }
 
-        // Запись происходит в один поток, так как требуется упорядочить сжатые блоки по Id
+        /// <summary>
+        ///  Запись происходит в один поток, так как требуется упорядочить сжатые блоки по Id через Hashtable
+        /// </summary>
         private void WritingThread(object obj)
         {
-            FileDescriptor writeFile = ((FileDescriptor)obj);
+            FileDescriptor writeFileDescriptor = obj as FileDescriptor;
             try
             {
-                using (FileStream fileWrite = writeFile.GetDescription.OpenWrite())
+                using (FileStream writeFileStream = writeFileDescriptor.GetDescription.OpenWrite())
                 {
                     _lastBlock = 0;
-                    Hashtable tasks = Hashtable.Synchronized(_writeTaskPool);
                     while (_await)
                     {
-                        if (tasks.ContainsKey(_lastBlock))
-                        {
-                            CompressionWriteTaskInfo taskInfo = tasks[_lastBlock] as CompressionWriteTaskInfo;
-                            taskInfo.Execute(fileWrite);
-                            tasks.Remove(_lastBlock);
-                            _lastBlock++;
-                        }
-                        else
+                        ITaskInfo taskInfo = _writeTaskPool.NextTask() as ITaskInfo;
+                        if (taskInfo == null)
                         {
                             continue;
                         }
+                        taskInfo.Execute(writeFileStream);
+                        _lastBlock++;
                     }
                 }
             }
             catch (Exception exc)
             {
-                Console.WriteLine("Error on writing thread: " + exc);
+                Console.WriteLine("Error on file writing");
+#if DEBUG
+                Console.WriteLine(exc);
+#endif
                 _await = false;
             }
         }

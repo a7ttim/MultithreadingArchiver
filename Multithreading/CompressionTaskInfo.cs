@@ -31,11 +31,14 @@ namespace Multithreading
 
         public object Execute(object obj)
         {
-            using (GZipStream compressStream = new GZipStream((MemoryStream)obj, CompressionLevel.Optimal))
+            using (MemoryStream memoryStream = new MemoryStream())
             {
-                compressStream.Write(_bytes, 0, _bytes.Length);
+                using (GZipStream compressStream = new GZipStream(memoryStream, CompressionLevel.Optimal))
+                {
+                    compressStream.Write(_bytes, 0, _bytes.Length);
+                }
+                return memoryStream;
             }
-            return null;
         }
 
         public object GetData()

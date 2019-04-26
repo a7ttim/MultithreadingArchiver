@@ -38,16 +38,17 @@ namespace Multithreading
         /// </param>
         public object Execute(object obj)
         {
-            byte[] buffer = obj as byte[];
-            using (MemoryStream memoryStream = new MemoryStream())
+            using (MemoryStream memoryStream = new MemoryStream(_bytes))
             {
                 using (GZipStream compressStream = new GZipStream(memoryStream, CompressionMode.Decompress))
                 {
-                    compressStream.Read(_bytes, 0, _bytes.Length);
-                    buffer = _bytes.ToArray();
+                    int size = BitConverter.ToInt32(_bytes, _bytes.Length - 4);
+                    byte[] bytes = new byte[size];
+                    compressStream.Read(bytes, 0, bytes.Length);
+                    byte[] array = bytes.ToArray();
+                    return array;
                 }
             }
-            return null;
         }
 
         public object GetData()

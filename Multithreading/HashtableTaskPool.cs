@@ -11,15 +11,14 @@ using System.Collections.Generic;
 using System.Text;
 using System.IO;
 using System.Threading;
-using System.Threading.Tasks;
+using System.Collections;
 
 namespace Multithreading
 {
-	public class ArchiverTaskPool
+	public class HashtableTaskPool
     {
-        public Mutex mutex = new Mutex();
-
-        Queue<ITaskInfo> _tasksInfo;
+        private Hashtable _tasksInfo;
+        private Int64 _last = 0;
 
         public bool IsHasTasks()
         {
@@ -31,32 +30,33 @@ namespace Multithreading
             return _tasksInfo.Count;
         }
 
-        public bool isActive()
+        public HashtableTaskPool()
         {
-            return true;
-        }
-
-        public ArchiverTaskPool()
-        {
-            _tasksInfo = new Queue<ITaskInfo>();
+            _tasksInfo = new Hashtable();
         }
 
         public void AddTask(ITaskInfo task)
         {
-            mutex.WaitOne();
-            _tasksInfo.Enqueue(task);
-            mutex.ReleaseMutex();
+            lock (this)
+            {
+                _tasksInfo.Add(task.GetId(), task);
+            }
         }
 
         public ITaskInfo NextTask()
         {
-            mutex.WaitOne();
             ITaskInfo task = null;
-            if (IsHasTasks())
+            lock (this)
             {
-                task = _tasksInfo.Dequeue();
+                if (IsHasTasks())
+                {
+                    if (_tasksInfo.ContainsKey(_last))
+                    {
+                        task = _tasksInfo[_last] as ITaskInfo;
+                        _tasksInfo.Remove(_last++);
+                    }
+                }
             }
-            mutex.ReleaseMutex();
             return task;
         }
 	}
