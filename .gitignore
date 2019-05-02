@@ -12,3 +12,19 @@ Multithreading/bin/Debug/film\.mkv
 Multithreading/bin/Debug/ReShade_Setup_4\.2\.1\.exe
 
 Multithreading/bin/Debug/ReShade_Setup_4\.2\.1\.exe\.gz
+
+\.vs/
+
+Multithreading/bin/Release/film\.mkv
+
+Multithreading/bin/Release/film\.mkv\.gz
+
+Multithreading/bin/Release/ReShade_Setup_4\.2\.1\.exe
+
+Multithreading/bin/Release/ReShade_Setup_4\.2\.1\.exe\.gz
+
+Multithreading/bin/Release/Multithreading\.pdb
+
+Multithreading/bin/
+
+Multithreading/obj/
