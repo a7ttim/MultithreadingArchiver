@@ -14,7 +14,7 @@ using System.Diagnostics;
 namespace MultithreadingArchiver
 {
     /// <summary>
-    /// Статический класс, выполняющий сжатие или распаковку файла
+    /// Статический класс, выполняющий сжатие или распаковку файла и обработку исключений
     /// </summary>
     public static class Archiver
     {
@@ -37,19 +37,19 @@ namespace MultithreadingArchiver
                 // Обработка исключений
                 if (!File.Exists(open_path))
                 {
-                    throw new Exception("Source file is not exist");
+                    Console.WriteLine("Source file is not exist");
                 }
                 if (open.GetDescription.Extension == ".gz")
                 {
-                    throw new Exception("Source file extension is GZip");
+                    Console.WriteLine("Source file extension is GZip");
                 }
                 if (!Directory.Exists(save_path))
                 {
-                    throw new Exception("Dir is not exist");
+                    Console.WriteLine("Dir is not exist");
                 }
 
                 CompressionTaskFactory factory = new CompressionTaskFactory();
-                Compressor progamMode = new Compressor(cancellationToken.Token, factory, 65536, Environment.ProcessorCount, 100);
+                Compressor progamMode = new Compressor(cancellationToken.Token, factory, 56636, Environment.ProcessorCount, 100);
 
 #if DEBUG
                 // Замерить время сжатия
@@ -62,7 +62,7 @@ namespace MultithreadingArchiver
 #if DEBUG
                 timer.Stop();
                 Console.WriteLine(timer.Elapsed.TotalSeconds);
-                Console.ReadLine();
+                Console.ReadKey();
 #endif
 
                 // Если процесс отменён, то удалить архив
@@ -107,19 +107,19 @@ namespace MultithreadingArchiver
                 // Обработка исключений
                 if (!File.Exists(open_path))
                 {
-                    throw new Exception("Source file is not exist");
+                    Console.WriteLine("Source file is not exist");
                 }
                 if (!Directory.Exists(save_path))
                 {
-                    throw new Exception("Dir is not exist");
+                    Console.WriteLine("Dir is not exist");
                 }
                 if (save.GetDescription.DirectoryName == ".gz")
                 {
-                    throw new Exception("Destination file extension is GZip");
+                    Console.WriteLine("Destination file extension is GZip");
                 }
                 if (open.GetDescription.Extension != ".gz")
                 {
-                    throw new Exception("Source file extension is not GZip");
+                    Console.WriteLine("Source file extension is not GZip");
                 }
 
                 DecompressorTaskFactory factory = new DecompressorTaskFactory();
@@ -135,7 +135,7 @@ namespace MultithreadingArchiver
 #if DEBUG
                 timer.Stop();
                 Console.WriteLine(timer.Elapsed.TotalSeconds);
-                Console.ReadLine();
+                Console.ReadKey();
 #endif
 
                 // Если процесс отменён, то удалить получившийся файл

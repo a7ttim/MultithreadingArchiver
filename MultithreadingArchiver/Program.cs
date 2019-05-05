@@ -7,7 +7,6 @@
 ///////////////////////////////////////////////////////////
 
 using System;
-using System.IO;
 
 using MultithreadingArchiver;
 
@@ -25,19 +24,21 @@ class Program
     /// </param>
     static void Main(string[] args)
     {
-#if !DEBUG
-        string mode = "decompress";
-        string open_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\bin\Release\film.mkv.gz";
-        string save_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\Multithreading\bin\Release\";
+#if DEBUG
+        string mode = "compress";
+        string open_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\MultithreadingArchiver\bin\Release\text.txt";
+        string save_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\MultithreadingArchiver\bin\Release\";
 #else
+        if (args.Length < 3)
+        {
+            Console.WriteLine("To compress or decompress please enter args:\n[compress | decompress] [source file path] [destination directory path]");
+            return;
+        }
+
         string mode = args[0];
         string open_path = args[1];
         string save_path = args[2];
 
-        if (args.Length < 2)
-        {
-            throw new Exception("Unable command line arguments");
-        }
 #endif
         // Инициализация
         if (mode == "c" || mode == "compress")
@@ -48,7 +49,11 @@ class Program
         {
             Archiver.Decompress(open_path, save_path);
         }
-        // Ручной выход из программы, если перехвачен ctrl+c
+        else
+        {
+            Console.WriteLine("[compress | decompress]");
+        }
+        // Мануальный выход из программы, если перехвачен ctrl+c
         Environment.Exit(0);
     }
 }

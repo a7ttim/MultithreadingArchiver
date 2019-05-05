@@ -1,1 +1,1 @@
-Multithreading
+Multithreading GunZip archiver using abstract factory, see "Multithreading archiver class diagram.PNG"
