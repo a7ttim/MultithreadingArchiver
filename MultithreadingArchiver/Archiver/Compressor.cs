@@ -26,11 +26,11 @@ namespace MultithreadingArchiver
         /// <summary> 
         /// Флаг для потоков, сигнализирующий, что процесс генерации задач не окончен
         /// </summary>
-        private bool _await = false;
+        private Int64 _lastZippedBlock = 0;
         /// <summary> 
         /// Счётчик блоков для наблюдателя
         /// </summary>
-        private Int64 _lastBlock;
+        private Int64 _lastWritedBlock = 0;
         /// <summary> 
         /// Количество целых кусков
         /// </summary>
@@ -59,6 +59,11 @@ namespace MultithreadingArchiver
         /// Максимальное число задач
         /// </summary>
         private int _maxTasks;
+        /// <summary> 
+        /// Время, на которое приостанавливается поток в мс
+        /// Подобрано приближением
+        /// </summary>
+        private const int _sleep = 3;
         /// <summary> 
         /// Токен для остановки процесса
         /// </summary>
@@ -119,44 +124,38 @@ namespace MultithreadingArchiver
                 _totalCount++;
             }
 
-
             try
             {
-                _await = true;
-
                 // Запуск потока чтения
-                {
-                    Thread thread = new Thread(ReadingThread);
-                    thread.Start(readFile);
-                }
+                Thread readingThread = new Thread(ReadingThread);
+                readingThread.Start(readFile);
+
                 // Запустить потоки распаковки
                 for (int i = 0; i < _cores; ++i)
                 {
-                    Thread thread = new Thread(CompressingThread);
-                    thread.Start();
+                    Thread compressingThread = new Thread(CompressingThread);
+                    compressingThread.Start();
                 }
+
                 // Запустить поток записи
-                {
-                    Thread thread = new Thread(WritingThread);
-                    thread.Start(writeFile);
-                }
+                Thread writingThread = new Thread(WritingThread);
+                writingThread.Start(writeFile);
+
                 // Запуск потока генерации задач
-                {
-                    Thread thread = new Thread(GeneratorThread);
-                    thread.Start();
-                }
+                Thread generatorThread = new Thread(GeneratorThread);
+                generatorThread.Start();
 
                 // Наблюдатель - ждёт, пока не завершится последний кусок и обновляет прогресс
-                while (_lastBlock < _totalCount && !_cancellationToken.IsCancellationRequested)
+                while (_lastWritedBlock < _totalCount && !_cancellationToken.IsCancellationRequested)
                 {
+#if !DEBUG
                     Console.Clear();
+#endif
                     Console.WriteLine("Press Ctrl+C for cancellation");
                     // Здесь должно высылаться оповещение контроллеру, чтобы тот обновил на GUI прогресс бар (W.I.P.) =]
-                    Console.WriteLine("Progress: {0}%", Math.Truncate(_lastBlock / (double)_totalCount * 100));
+                    Console.WriteLine("Progress: {0}%", Math.Truncate(_lastWritedBlock / (double)_totalCount * 100));
                     Thread.Sleep(500);
                 }
-
-                _await = false;
 
                 if (_cancellationToken.IsCancellationRequested)
                 {
@@ -164,7 +163,9 @@ namespace MultithreadingArchiver
                     return false;
                 }
 
+#if !DEBUG
                 Console.Clear();
+#endif
                 Console.WriteLine("Compression completed");
                 return true;
             }
@@ -195,6 +196,7 @@ namespace MultithreadingArchiver
                     if (_readTaskPool.TaskCount() > _maxTasks)
                     {
                         --i;
+                        Thread.Sleep(_sleep);
                         continue;
                     }
                     _readTaskPool.AddTask(_taskFactory.CreateReadTaskInfo(i, _readBlockSize));
@@ -204,6 +206,9 @@ namespace MultithreadingArchiver
                 {
                     _readTaskPool.AddTask(_taskFactory.CreateReadTaskInfo(_batchCount, _lastPiece));
                 }
+#if DEBUG
+                Console.WriteLine("End of generating tasksInfos");
+#endif
             }
             catch (Exception exc)
             {
@@ -228,21 +233,26 @@ namespace MultithreadingArchiver
                 using (FileStream _fileToBeCompressed = read_file.GetDescription.OpenRead())
                 {
                     Int64 lastBlock = 0;
-                    while (_await)
+                    while (lastBlock < _totalCount && !_cancellationToken.IsCancellationRequested)
                     {
                         // Защита от переполнения памяти
                         if (_compressTaskPool.TaskCount() > _maxTasks * _cores)
                         {
+                            Thread.Sleep(1);
                             continue;
                         }
                         ITaskInfo taskInfo = null;
                         taskInfo = _readTaskPool.NextTask();
                         if (taskInfo == null)
                         {
+                            Thread.Sleep(_sleep);
                             continue;
                         }
                         _compressTaskPool.AddTask(_taskFactory.CreateProcessTaskInfo(lastBlock++, (taskInfo.Execute(_fileToBeCompressed) as byte[])));
                     }
+#if DEBUG
+                    Console.WriteLine("End of reading");
+#endif
                 }
             }
             catch (Exception exc)
@@ -251,7 +261,6 @@ namespace MultithreadingArchiver
 #if DEBUG
                 Console.WriteLine(exc);
 #endif
-                _await = false;
             }
         }
 
@@ -263,20 +272,26 @@ namespace MultithreadingArchiver
         {
             try
             {
-                while (_await)
+                while (_lastZippedBlock < _totalCount && !_cancellationToken.IsCancellationRequested)
                 {
                     // Защита от переполнения памяти
                     if (_writeTaskPool.TaskCount() > _maxTasks)
                     {
+                        Thread.Sleep(_sleep);
                         continue;
                     }
                     ITaskInfo taskInfo = _compressTaskPool.NextTask();
                     if (taskInfo == null)
                     {
+                        Thread.Sleep(_sleep);
                         continue;
                     }
-                    _writeTaskPool.AddTask(_taskFactory.CreateWriteTaskInfo(taskInfo.GetId(), (taskInfo.Execute(null) as MemoryStream).ToArray()));
+                    _writeTaskPool.AddTask(_taskFactory.CreateWriteTaskInfo(taskInfo.GetId(), taskInfo.Execute(null) as byte[]));
+                    _lastZippedBlock++;
                 }
+#if DEBUG
+                Console.WriteLine("End of compressing");
+#endif
             }
             catch (Exception exc)
             {
@@ -284,7 +299,6 @@ namespace MultithreadingArchiver
 #if DEBUG
                 Console.WriteLine(exc);
 #endif
-                _await = false;
             }
         }
 
@@ -298,16 +312,16 @@ namespace MultithreadingArchiver
             {
                 using (FileStream writeFileStream = writeFileDescriptor.GetDescription.OpenWrite())
                 {
-                    _lastBlock = 0;
-                    while (_await)
+                    while (_lastWritedBlock < _totalCount && !_cancellationToken.IsCancellationRequested)
                     {
                         ITaskInfo taskInfo = _writeTaskPool.NextTask() as ITaskInfo;
                         if (taskInfo == null)
                         {
+                            Thread.Sleep(1);
                             continue;
                         }
                         taskInfo.Execute(writeFileStream);
-                        _lastBlock++;
+                        _lastWritedBlock++;
                     }
                 }
             }
@@ -317,7 +331,6 @@ namespace MultithreadingArchiver
 #if DEBUG
                 Console.WriteLine(exc);
 #endif
-                _await = false;
             }
         }
     }

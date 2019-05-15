@@ -25,8 +25,8 @@ class Program
     static void Main(string[] args)
     {
 #if DEBUG
-        string mode = "compress";
-        string open_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\MultithreadingArchiver\bin\Release\text.txt";
+        string mode = "decompress";
+        string open_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\MultithreadingArchiver\bin\Release\movie.mkv.gz";
         string save_path = @"C:\Users\A7tti\source\repos\MultithreadingArchiver\MultithreadingArchiver\bin\Release\";
 #else
         if (args.Length < 3)

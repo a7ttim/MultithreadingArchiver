@@ -20,26 +20,24 @@ namespace MultithreadingArchiver
         /// <summary> 
         /// Хранилища для задач
         /// </summary>
-        private IArchiverTaskPool _readTaskPool;
         private IArchiverTaskPool _compressTaskPool;
         private IArchiverTaskPool _writeTaskPool;
-        /// <summary> 
-        /// Флаг для потоков, сигнализирующий, что процесс генерации задач не окончен
-        /// </summary>
-        private bool _await = false;
         /// <summary> 
         /// Длина исходного файла
         /// </summary>
         Int64 _fileLength = 0;
         /// <summary> 
-        /// Счётчик блоков для наблюдателя
+        /// Счётчик блоков для условия остановки потока
         /// </summary>
-        private Int64 _lastBlock = 0;
+        private Int64 _lastUnzippedBlock = 0;
         /// <summary> 
-        /// Счётчик считанных блоков, выставлена единица, 
-        /// чтобы наблюдатель не прерывал процесс сразу
+        /// Счётчик блоков для условия остановки потока
         /// </summary>
-        private Int64 _batchCount = 1;
+        private Int64 _lastWritenBlock = 0;
+        /// <summary> 
+        /// Счётчик считанных блоков
+        /// </summary>
+        private Int64 _batchCount = 0;
         /// <summary> 
         /// Текущая позиция файла
         /// </summary>
@@ -56,6 +54,15 @@ namespace MultithreadingArchiver
         /// Максимальное число задач
         /// </summary>
         private int _maxTasks;
+        /// <summary> 
+        /// Время, на которое приостанавливается поток в мс
+        /// Подобрано приближением
+        /// </summary>
+        private const int _sleep = 3;
+        /// <summary> 
+        /// Флаг указывающий на то, что чтение файла не завершено
+        /// </summary>
+        private bool _isReading = true;
         /// <summary> 
         /// Токен для остановки процесса
         /// </summary>
@@ -97,7 +104,11 @@ namespace MultithreadingArchiver
 
             try
             {
-                _await = true;
+                // Запуск потока чтения
+                {
+                    Thread thread = new Thread(ReadingThread);
+                    thread.Start(readFile);
+                }
                 // Запустить потоки распаковки
                 for (int i = 0; i < _cores; ++i)
                 {
@@ -109,31 +120,28 @@ namespace MultithreadingArchiver
                     Thread thread = new Thread(WritingThread);
                     thread.Start(writeFile);
                 }
-                // Запуск потока чтения
-                {
-                    Thread thread = new Thread(ReadingThread);
-                    thread.Start(readFile);
-                }
 
                 // Ждать, пока не завершится последний кусок и обновлять прогресс
-                while (_lastBlock < _batchCount && !_cancellationToken.IsCancellationRequested)
+                while ((_isReading || _lastWritenBlock < _batchCount) && !_cancellationToken.IsCancellationRequested)
                 {
-                    Console.Clear();
+#if !DEBUG
+                Console.Clear();
+#endif
                     Console.WriteLine("Press Ctrl+C for cancellation");
                     // Здесь должно высылаться оповещение контроллеру, чтобы тот обновил на GUI прогресс бар (W.I.P.) =]
-                    Console.WriteLine("Progress: {0}%", Math.Truncate(_position / (double)_fileLength * 100));
+                    Console.WriteLine("Progress: {0}%", Convert.ToInt32(_position / (double)_fileLength * 100));
                     Thread.Sleep(500);
                 }
-
-                _await = false;
-
+                
                 if (_cancellationToken.IsCancellationRequested)
                 {
                     Console.WriteLine("Decompression cancelled");
                     return false;
                 }
 
+#if !DEBUG
                 Console.Clear();
+#endif
                 Console.WriteLine("Decompression completed");
                 return true;
             }
@@ -159,21 +167,25 @@ namespace MultithreadingArchiver
             _fileLength = readFile.GetDescription.Length;
             try
             {
-                using (FileStream _fileToBeDecompressed = readFile.GetDescription.OpenRead())
+                using (FileStream fileToBeDecompressed = readFile.GetDescription.OpenRead())
                 {
-                    _batchCount = 0;
                     // Читать блоки архива, пока не закончится файл
-                    while (_fileToBeDecompressed.Position < _fileLength)
+                    while (fileToBeDecompressed.Position < _fileLength && !_cancellationToken.IsCancellationRequested)
                     {
-                        _position = _fileToBeDecompressed.Position;
+                        _position = fileToBeDecompressed.Position;
                         // Защита от переполнения памяти
                         if (_compressTaskPool.TaskCount() > _maxTasks * _cores)
                         {
+                            Thread.Sleep(_sleep);
                             continue;
                         }
                         ITaskInfo task = _taskFactory.CreateReadTaskInfo(_batchCount, 0);
-                        _compressTaskPool.AddTask(_taskFactory.CreateProcessTaskInfo(_batchCount++, task.Execute(_fileToBeDecompressed) as byte[]));
+                        _compressTaskPool.AddTask(_taskFactory.CreateProcessTaskInfo(_batchCount++, task.Execute(fileToBeDecompressed) as byte[]));
                     }
+                    _isReading = false;
+#if DEBUG
+                    Console.WriteLine("End of reading");
+#endif
                 }
             }
             catch (Exception exc)
@@ -182,7 +194,6 @@ namespace MultithreadingArchiver
 #if DEBUG
                 Console.WriteLine(exc);
 #endif
-                _await = false;
             }
         }
 
@@ -194,20 +205,26 @@ namespace MultithreadingArchiver
         {
             try
             {
-                while (_await)
+                while ((_isReading || _lastUnzippedBlock < _batchCount) && !_cancellationToken.IsCancellationRequested)
                 {
                     // Защита от переполнения памяти
                     if (_writeTaskPool.TaskCount() > _maxTasks)
                     {
+                        Thread.Sleep(1);
                         continue;
                     }
                     ITaskInfo taskInfo = _compressTaskPool.NextTask() as ITaskInfo;
                     if (taskInfo == null)
                     {
+                        Thread.Sleep(1);
                         continue;
                     }
                     _writeTaskPool.AddTask(_taskFactory.CreateWriteTaskInfo(taskInfo.GetId(), taskInfo.Execute(null) as byte[]));
+                    _lastUnzippedBlock++;
                 }
+#if DEBUG
+                Console.WriteLine("End of decompressing");
+#endif
             }
             catch (Exception exc)
             {
@@ -215,7 +232,6 @@ namespace MultithreadingArchiver
 #if DEBUG
                 Console.WriteLine(exc);
 #endif
-                _await = false;
             }
         }
 
@@ -232,16 +248,16 @@ namespace MultithreadingArchiver
             {
                 using (FileStream fileWrite = writeFile.GetDescription.OpenWrite())
                 {
-                    _lastBlock = 0;
-                    while (_await)
+                    while ((_isReading || _lastWritenBlock < _batchCount) && !_cancellationToken.IsCancellationRequested)
                     {
                         ITaskInfo taskInfo = _writeTaskPool.NextTask() as ITaskInfo;
                         if (taskInfo == null)
                         {
+                            Thread.Sleep(1);
                             continue;
                         }
                         taskInfo.Execute(fileWrite);
-                        _lastBlock++;
+                        _lastWritenBlock++;
                     }
                 }
             }
@@ -251,7 +267,6 @@ namespace MultithreadingArchiver
 #if DEBUG
                 Console.WriteLine(exc);
 #endif
-                _await = false;
             }
         }
     }

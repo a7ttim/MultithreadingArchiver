@@ -38,18 +38,21 @@ namespace MultithreadingArchiver
                 if (!File.Exists(open_path))
                 {
                     Console.WriteLine("Source file is not exist");
+                    throw new Exception();
                 }
                 if (open.GetDescription.Extension == ".gz")
                 {
                     Console.WriteLine("Source file extension is GZip");
+                    throw new Exception();
                 }
                 if (!Directory.Exists(save_path))
                 {
                     Console.WriteLine("Dir is not exist");
+                    throw new Exception();
                 }
 
                 CompressionTaskFactory factory = new CompressionTaskFactory();
-                Compressor progamMode = new Compressor(cancellationToken.Token, factory, 56636, Environment.ProcessorCount, 100);
+                Compressor progamMode = new Compressor(cancellationToken.Token, factory, 56636, Environment.ProcessorCount, Environment.ProcessorCount);
 
 #if DEBUG
                 // Замерить время сжатия
@@ -104,26 +107,29 @@ namespace MultithreadingArchiver
                 FileDescriptor open = new FileDescriptor(open_path);
                 FileDescriptor save = new FileDescriptor(save_path + open.GetDescription.Name.Replace(".gz", ""));
 
-                // Обработка исключений
                 if (!File.Exists(open_path))
                 {
                     Console.WriteLine("Source file is not exist");
+                    throw new Exception();
                 }
                 if (!Directory.Exists(save_path))
                 {
                     Console.WriteLine("Dir is not exist");
+                    throw new Exception();
                 }
                 if (save.GetDescription.DirectoryName == ".gz")
                 {
                     Console.WriteLine("Destination file extension is GZip");
+                    throw new Exception();
                 }
                 if (open.GetDescription.Extension != ".gz")
                 {
                     Console.WriteLine("Source file extension is not GZip");
+                    throw new Exception();
                 }
 
                 DecompressorTaskFactory factory = new DecompressorTaskFactory();
-                Decompressor progamMode = new Decompressor(cancellationToken.Token, factory, Environment.ProcessorCount);
+                Decompressor progamMode = new Decompressor(cancellationToken.Token, factory, Environment.ProcessorCount, Environment.ProcessorCount);
 
 #if DEBUG
                 var timer = new Stopwatch();
@@ -151,8 +157,8 @@ namespace MultithreadingArchiver
             {
 #if DEBUG
                 Console.WriteLine(exc);
-                Console.ReadKey();
 #endif
+                Console.ReadKey();
             }
         }
     }

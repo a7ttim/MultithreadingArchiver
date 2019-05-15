@@ -43,8 +43,7 @@ namespace MultithreadingArchiver
                     int size = BitConverter.ToInt32(_bytes, _bytes.Length - 4);
                     byte[] bytes = new byte[size];
                     compressStream.Read(bytes, 0, bytes.Length);
-                    byte[] array = bytes.ToArray();
-                    return array;
+                    return bytes.ToArray();
                 }
             }
         }

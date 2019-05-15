@@ -28,15 +28,15 @@ namespace MultithreadingArchiver
 
         public object Execute(object obj)
         {
-            MemoryStream memoryStream;
-            using (memoryStream = new MemoryStream())
+            // TODO: Здесь падение производительности, написать wrapper, который не позволяет закрыть поток
+            using (MemoryStream memoryStream = new MemoryStream())
             {
                 using (GZipStream compressStream = new GZipStream(memoryStream, CompressionLevel.Optimal))
                 {
                     compressStream.Write(_bytes, 0, _bytes.Length);
                 }
+                return memoryStream.ToArray();
             }
-            return memoryStream;
         }
 
         public object GetData()
